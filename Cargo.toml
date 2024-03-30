@@ -1,6 +1,6 @@
 [package]
 name = "miracle"
-description = "Generic pub/sub resource server for hosting Project Lighthouse models"
+description = "Generic pub/sub resource server for Project Lighthouse models"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0"
