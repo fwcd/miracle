@@ -1,7 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{error, info, info_span, Instrument};
+
+use crate::client_handler::ClientHandler;
+
+mod client_handler;
 
 #[derive(Parser)]
 #[command(about, version, disable_help_flag = true)]
@@ -28,8 +32,12 @@ async fn main() -> Result<()> {
     info!("Listening on {}", listener.local_addr()?);
 
     while let Ok((stream, addr)) = listener.accept().await {
-        info!("Incoming connection from {}", addr);
-        // TODO
+        tokio::spawn(async move {
+            info!("Incoming connection");
+            if let Err(e) = ClientHandler::handle_stream(stream).await {
+                error!("{}", e);
+            }
+        }.instrument(info_span!("Client", %addr)));
     }
 
     Ok(())
