@@ -1,7 +1,8 @@
-use anyhow::Result;
-use async_tungstenite::{tokio::TokioAdapter, WebSocketStream};
-use futures::StreamExt;
+use anyhow::{bail, Error, Result};
+use async_tungstenite::{tokio::TokioAdapter, tungstenite::Message, WebSocketStream};
+use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
+use tracing::warn;
 
 pub struct ClientHandler {
     web_socket: WebSocketStream<TokioAdapter<TcpStream>>,
@@ -22,8 +23,23 @@ impl ClientHandler {
     pub async fn run(mut self) -> Result<()> {
         while let Some(message) = self.web_socket.next().await {
             let message = message?;
+            match message {
+                Message::Binary(bytes) => {},
+                Message::Ping(_) => {},
+                _ => warn!("Got non-binary message: {:?}", message),
+            }
             // TODO
         }
         Ok(())
+    }
+
+    async fn receive_raw(&mut self) -> Result<Vec<u8>> {
+        loop {
+            let Some(message) = self.web_socket.next().await else {
+                bail!("No message");
+            };
+            let message = message?;
+            // TODO
+        }
     }
 }
