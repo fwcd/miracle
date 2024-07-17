@@ -6,22 +6,28 @@ use serde::Deserialize;
 use tokio::net::TcpStream;
 use tracing::{error, info, warn};
 
+/// A handler that receives and responds to messages from a single client.
 pub struct ClientHandler {
     web_socket: WebSocketStream<TokioAdapter<TcpStream>>,
 }
 
 impl ClientHandler {
+    /// Creates a new handler from the given stream.
     pub async fn from_stream(stream: TcpStream) -> Result<Self> {
         Ok(Self {
             web_socket: async_tungstenite::tokio::accept_async(stream).await?,
         })
     }
 
+    /// Creates a new handler from the given stream and starts a blocking
+    /// receive loop until the connection closes.
     pub async fn handle_stream(stream: TcpStream) -> Result<()> {
         let handler = Self::from_stream(stream).await?;
         handler.run().await
     }
 
+    /// Starts a blocking receive loop that parses and responds to messages from
+    /// the client. Returns when the connection closes.
     pub async fn run(mut self) -> Result<()> {
         while let Some(msg) = self.receive_message::<Value>().await {
             match msg {
