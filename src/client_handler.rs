@@ -72,12 +72,9 @@ impl ClientHandler {
         while let Some(message) = self.web_socket.next().await {
             match message {
                 Ok(Message::Binary(bytes)) => return Some(Ok(bytes)),
-                Ok(Message::Ping(_)) => {
-                    // Ignore pings for now
-                },
-                Ok(_) => {
-                    warn!("Got non-binary message: {:?}", message)
-                },
+                Ok(Message::Ping(_)) => {}, // Ignore pings for now
+                Ok(Message::Close(_)) => return None,
+                Ok(_) => warn!("Got non-binary message: {:?}", message),
                 Err(tungstenite::Error::Protocol(ProtocolError::ResetWithoutClosingHandshake)) => {
                     warn!("Closed without handshake");
                     return None;
