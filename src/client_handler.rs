@@ -1,6 +1,6 @@
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::Message, WebSocketStream};
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use tokio::net::TcpStream;
 use tracing::warn;
 
