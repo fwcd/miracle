@@ -1,8 +1,10 @@
+use std::fmt::Debug;
+
 use anyhow::Result;
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Message}, WebSocketStream};
-use futures::StreamExt;
-use lighthouse_protocol::{ClientMessage, Value};
-use serde::Deserialize;
+use futures::{SinkExt, StreamExt};
+use lighthouse_protocol::{ClientMessage, ServerMessage, Value};
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tracing::{error, info, warn};
 
@@ -29,12 +31,29 @@ impl ClientHandler {
     /// Starts a blocking receive loop that parses and responds to messages from
     /// the client. Returns when the connection closes.
     pub async fn run(mut self) -> Result<()> {
-        while let Some(msg) = self.receive_message::<Value>().await {
-            match msg {
-                Ok(msg) => info!("{:?}", msg), // TODO
+        while let Some(message) = self.receive_message::<Value>().await {
+            match message {
+                Ok(message) => {
+                    if let Err(e) = self.handle_message(message).await {
+                        error!("Could not handle message: {:?}", e);
+                    }
+                },
                 Err(e) => error!("Bad message: {:?}", e),
             }
         }
+        Ok(())
+    }
+
+    /// Handles and responds to the given client message.
+    async fn handle_message<P>(&mut self, message: ClientMessage<P>) -> Result<()>
+    where P: for<'de> Deserialize<'de> {
+        self.send_message(&ServerMessage {
+            request_id: Some(message.request_id),
+            code: 200,
+            warnings: vec![],
+            response: None,
+            payload: (),
+        }).await?;
         Ok(())
     }
 
@@ -63,5 +82,15 @@ impl ClientHandler {
             }
         }
         None
+    }
+
+    async fn send_message<P>(&mut self, message: &ServerMessage<P>) -> Result<()>
+    where
+        P: Serialize {
+        self.send_raw(rmp_serde::to_vec_named(message)?).await
+    }
+
+    async fn send_raw(&mut self, bytes: impl Into<Vec<u8>> + Debug) -> Result<()> {
+        Ok(self.web_socket.send(Message::Binary(bytes.into())).await?)
     }
 }
