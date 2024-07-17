@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::Message, WebSocketStream};
 use futures::StreamExt;
-use lighthouse_protocol::{ServerMessage, Value};
+use lighthouse_protocol::{ClientMessage, Value};
 use serde::Deserialize;
 use tokio::net::TcpStream;
 use tracing::{error, info, warn};
@@ -38,7 +38,7 @@ impl ClientHandler {
         Ok(())
     }
 
-    async fn receive_message<P>(&mut self) -> Option<Result<ServerMessage<P>>>
+    async fn receive_message<P>(&mut self) -> Option<Result<ClientMessage<P>>>
     where
         P: for<'de> Deserialize<'de> {
         let bytes = self.receive_raw().await?;
