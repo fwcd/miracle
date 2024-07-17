@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use tokio::net::TcpListener;
-use tracing::{error, info, info_span, Instrument};
+use tracing::{error, info, info_span, level_filters::LevelFilter, Instrument};
+use tracing_subscriber::EnvFilter;
 
 use crate::client_handler::ClientHandler;
 
@@ -23,8 +24,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt().init();
     _ = dotenvy::dotenv();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?)
+        .init();
 
     let args = Args::parse();
 
