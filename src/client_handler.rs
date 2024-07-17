@@ -6,7 +6,7 @@ use futures::{SinkExt, StreamExt};
 use lighthouse_protocol::{ClientMessage, ServerMessage, Value};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 /// A handler that receives and responds to messages from a single client.
 pub struct ClientHandler {
@@ -57,6 +57,8 @@ impl ClientHandler {
         Ok(())
     }
 
+    /// Receives and parses a single high-level message from the client or
+    /// `None` if there are no more.
     async fn receive_message<P>(&mut self) -> Option<Result<ClientMessage<P>>>
     where
         P: for<'de> Deserialize<'de> {
@@ -64,6 +66,8 @@ impl ClientHandler {
         Some(bytes.and_then(|b| Ok(rmp_serde::from_slice(&b)?)))
     }
 
+    /// Receives a single binary WebSocket message from the client or `None` if
+    /// there are no more.
     async fn receive_raw(&mut self) -> Option<Result<Vec<u8>>> {
         while let Some(message) = self.web_socket.next().await {
             match message {
@@ -84,12 +88,14 @@ impl ClientHandler {
         None
     }
 
+    /// Sends a single high-level message to the client.
     async fn send_message<P>(&mut self, message: &ServerMessage<P>) -> Result<()>
     where
         P: Serialize {
         self.send_raw(rmp_serde::to_vec_named(message)?).await
     }
 
+    /// Sends a single binary WebSocket message to the client.
     async fn send_raw(&mut self, bytes: impl Into<Vec<u8>> + Debug) -> Result<()> {
         Ok(self.web_socket.send(Message::Binary(bytes.into())).await?)
     }
