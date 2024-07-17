@@ -1,5 +1,5 @@
 use anyhow::Result;
-use async_tungstenite::{tokio::TokioAdapter, tungstenite::Message, WebSocketStream};
+use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Message}, WebSocketStream};
 use futures::StreamExt;
 use lighthouse_protocol::{ClientMessage, Value};
 use serde::Deserialize;
@@ -49,9 +49,16 @@ impl ClientHandler {
         while let Some(message) = self.web_socket.next().await {
             match message {
                 Ok(Message::Binary(bytes)) => return Some(Ok(bytes)),
-                // We ignore pings for now
-                Ok(Message::Ping(_)) => {},
-                Ok(_) => warn!("Got non-binary message: {:?}", message),
+                Ok(Message::Ping(_)) => {
+                    // Ignore pings for now
+                },
+                Ok(_) => {
+                    warn!("Got non-binary message: {:?}", message)
+                },
+                Err(tungstenite::Error::Protocol(ProtocolError::ResetWithoutClosingHandshake)) => {
+                    warn!("Closed without handshake");
+                    return None;
+                },
                 Err(e) => return Some(Err(e.into())),
             }
         }
