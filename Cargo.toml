@@ -16,6 +16,7 @@ dotenvy = "0.15.7"
 futures = "0.3.30"
 lighthouse-protocol = "3.0.1"
 rmp-serde = "1.1.2"
+serde = "1.0.204"
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

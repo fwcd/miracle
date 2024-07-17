@@ -1,8 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::Message, WebSocketStream};
 use futures::StreamExt;
+use lighthouse_protocol::{ServerMessage, Value};
+use serde::Deserialize;
 use tokio::net::TcpStream;
-use tracing::warn;
+use tracing::{error, info, warn};
 
 pub struct ClientHandler {
     web_socket: WebSocketStream<TokioAdapter<TcpStream>>,
@@ -21,25 +23,32 @@ impl ClientHandler {
     }
 
     pub async fn run(mut self) -> Result<()> {
-        while let Some(message) = self.web_socket.next().await {
-            let message = message?;
-            match message {
-                Message::Binary(bytes) => {},
-                Message::Ping(_) => {},
-                _ => warn!("Got non-binary message: {:?}", message),
+        while let Some(msg) = self.receive_message::<Value>().await {
+            match msg {
+                Ok(msg) => info!("{:?}", msg), // TODO
+                Err(e) => error!("Bad message: {:?}", e),
             }
-            // TODO
         }
         Ok(())
     }
 
-    async fn receive_raw(&mut self) -> Result<Vec<u8>> {
-        loop {
-            let Some(message) = self.web_socket.next().await else {
-                bail!("No message");
-            };
-            let message = message?;
-            // TODO
+    async fn receive_message<P>(&mut self) -> Option<Result<ServerMessage<P>>>
+    where
+        P: for<'de> Deserialize<'de> {
+        let bytes = self.receive_raw().await?;
+        Some(bytes.and_then(|b| Ok(rmp_serde::from_slice(&b)?)))
+    }
+
+    async fn receive_raw(&mut self) -> Option<Result<Vec<u8>>> {
+        while let Some(message) = self.web_socket.next().await {
+            match message {
+                Ok(Message::Binary(bytes)) => return Some(Ok(bytes)),
+                // We ignore pings for now
+                Ok(Message::Ping(_)) => {},
+                Ok(_) => warn!("Got non-binary message: {:?}", message),
+                Err(e) => return Some(Err(e.into())),
+            }
         }
+        None
     }
 }

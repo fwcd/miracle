@@ -37,10 +37,11 @@ async fn main() -> Result<()> {
 
     while let Ok((stream, addr)) = listener.accept().await {
         tokio::spawn(async move {
-            info!("Incoming connection");
+            info!("Opened connection");
             if let Err(e) = ClientHandler::handle_stream(stream).await {
                 error!("{}", e);
             }
+            info!("Closed connection");
         }.instrument(info_span!("Client", %addr)));
     }
 
