@@ -49,10 +49,10 @@ impl ClientHandler {
     where P: for<'de> Deserialize<'de> {
         self.send_message(&ServerMessage {
             request_id: Some(message.request_id),
-            code: 200,
+            code: 501,
             warnings: vec![],
-            response: None,
-            payload: (),
+            response: Some("Proper message handling is not implemented yet".to_owned()),
+            payload: (), // TODO: Yield a proper payload
         }).await?;
         Ok(())
     }
