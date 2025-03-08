@@ -4,9 +4,10 @@ use tokio::net::TcpListener;
 use tracing::{error, info, info_span, level_filters::LevelFilter, Instrument};
 use tracing_subscriber::EnvFilter;
 
-use crate::client_handler::ClientHandler;
+use crate::handler::ClientHandler;
 
-mod client_handler;
+mod handler;
+mod model;
 
 #[derive(Parser)]
 #[command(about, version, disable_help_flag = true)]
