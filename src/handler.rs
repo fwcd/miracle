@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
-use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Message}, WebSocketStream};
-use futures::{SinkExt, StreamExt};
+use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Bytes, Message}, WebSocketStream};
+use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
 use serde::Serialize;
 use serde::Deserialize;
@@ -58,7 +58,7 @@ impl ClientHandler {
 
     // Receives a single binary WebSocket message from the client or `None` if
     /// there are no more.
-    async fn receive_raw(&mut self) -> Option<Result<Vec<u8>>> {
+    async fn receive_raw(&mut self) -> Option<Result<Bytes>> {
         while let Some(message) = self.web_socket.next().await {
             match message {
                 Ok(Message::Binary(bytes)) => return Some(Ok(bytes)),
@@ -147,6 +147,6 @@ impl ClientHandler {
     }
 
     async fn send_raw(&mut self, raw_message: Vec<u8>) -> Result<()> {
-        Ok(self.web_socket.send(Message::Binary(raw_message)).await?)
+        Ok(self.web_socket.send(Message::Binary(raw_message.into())).await?)
     }
 }
