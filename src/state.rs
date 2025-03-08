@@ -7,6 +7,7 @@ use crate::model::Directory;
 #[derive(Clone)]
 pub struct State {
     tree: Arc<Mutex<Directory>>,
+    // TODO: Store streams (HashMap<Vec<String>, Vec<mpsc::Sender<Value>>>)
 }
 
 impl State {
@@ -19,4 +20,6 @@ impl State {
     pub async fn lock_tree(&self) -> MutexGuard<Directory> {
         self.tree.lock().await
     }
+
+    // TODO: Replace lock_tree with abstraction layer for CRUD, parent, directory lookup and notify streams
 }
