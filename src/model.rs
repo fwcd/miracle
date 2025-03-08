@@ -57,6 +57,7 @@ impl Directory {
         self.children.insert(name, node);
     }
 
+    #[allow(unused)]
     pub fn get_path(&self, path: &[String]) -> Option<&Node> {
         path.first().and_then(|first| {
             let is_leaf = path.len() == 1;
