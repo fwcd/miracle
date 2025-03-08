@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use clap::Parser;
-use tokio::net::TcpListener;
+use model::Directory;
+use state::State;
+use tokio::{net::TcpListener, sync::Mutex};
 use tracing::{error, info, info_span, level_filters::LevelFilter, Instrument};
 use tracing_subscriber::EnvFilter;
 
@@ -8,6 +12,7 @@ use crate::handler::ClientHandler;
 
 mod handler;
 mod model;
+mod state;
 
 #[derive(Parser)]
 #[command(about, version, disable_help_flag = true)]
@@ -33,13 +38,16 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    let state = State::new();
+
     let listener = TcpListener::bind((args.host, args.port)).await?;
     info!("Listening on {}", listener.local_addr()?);
 
     while let Ok((stream, addr)) = listener.accept().await {
+        let state = state.clone();
         tokio::spawn(async move {
             info!("Opened connection");
-            if let Err(e) = ClientHandler::handle_stream(stream).await {
+            if let Err(e) = ClientHandler::handle_stream(stream, state).await {
                 error!("{}", e);
             }
             info!("Closed connection");

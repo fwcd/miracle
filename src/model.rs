@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use lighthouse_protocol::Value;
+use lighthouse_protocol::{DirectoryTree, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Resource {
@@ -24,12 +24,88 @@ impl Resource {
             value: Value::Nil,
         }
     }
+
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
 }
 
 impl Directory {
     pub fn new() -> Self {
         Directory {
             children: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Node> {
+        self.children.get(name)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.children.get_mut(name)
+    }
+
+    pub fn remove(&mut self, name: &str) {
+        self.children.remove(name);
+    }
+
+    pub fn insert(&mut self, name: String, node: Node) {
+        self.children.insert(name, node);
+    }
+
+    pub fn get_path(&self, path: &[String]) -> Option<&Node> {
+        path.first().and_then(|first| {
+            let is_leaf = path.len() == 1;
+            let child = self.get(first)?;
+            if is_leaf {
+                Some(child)
+            } else {
+                match child {
+                    Node::Resource(_) => None,
+                    Node::Directory(child_dir) => child_dir.get_path(&path[1..]),
+                }  
+            }
+        })
+    }
+
+    pub fn get_path_mut(&mut self, path: &[String]) -> Option<&mut Node> {
+        path.first().and_then(|first| {
+            let is_leaf = path.len() == 1;
+            let child = self.get_mut(first)?;
+            if is_leaf {
+                Some(child)
+            } else {
+                match child {
+                    Node::Resource(_) => None,
+                    Node::Directory(child_dir) => child_dir.get_path_mut(&path[1..]),
+                }  
+            }
+        })
+    }
+
+    pub fn list_tree(&self) -> DirectoryTree {
+        DirectoryTree {
+            entries: self.children.iter()
+                .map(|(name, child)| (name.clone(), child.as_directory().map(|d| d.list_tree())))
+                .collect()
+        }
+    }
+}
+
+impl Node {
+    pub fn as_resource(&self) -> Option<&Resource> {
+        if let Self::Resource(res) = self {
+            Some(res)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_directory(&self) -> Option<&Directory> {
+        if let Self::Directory(dir) = self {
+            Some(dir)
+        } else {
+            None
         }
     }
 }
