@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 
 use lighthouse_protocol::{DirectoryTree, Value};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Resource {
     value: Value,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Directory {
     children: HashMap<String, Node>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Node {
     Resource(Resource),
     Directory(Directory),
