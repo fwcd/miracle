@@ -114,10 +114,14 @@ impl ClientHandler {
             let name = message.path[message.path.len() - 1].clone();
 
             let parent: &mut Directory = {
-                match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
-                    Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
-                    Node::Directory(directory) => directory,
-                } 
+                if parent_path.is_empty() {
+                    &mut tree
+                } else {
+                    match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
+                        Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
+                        Node::Directory(directory) => directory,
+                    } 
+                }
             };
 
             match message.verb {
