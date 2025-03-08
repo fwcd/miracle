@@ -102,41 +102,50 @@ impl ClientHandler {
     async fn process_message(&self, message: ClientMessage<Value>) -> Result<(Value, i32)> {
         let mut tree = self.state.lock_tree().await;
 
-        let parent_path = &message.path[..message.path.len() - 1];
-        let name = message.path[message.path.len() - 1].clone();
+        let response_payload = if message.path.is_empty() {
+            // Root path (i.e. the empty path)
+            match message.verb {
+                Verb::List => to_value(tree.list_tree())?,
+                _ => bail!("The root path can only be listed currently"),
+            }
+        } else {
+            // Any non-root path
+            let parent_path = &message.path[..message.path.len() - 1];
+            let name = message.path[message.path.len() - 1].clone();
 
-        let parent: &mut Directory = {
-            match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
-                Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
-                Node::Directory(directory) => directory,
-            } 
-        };
+            let parent: &mut Directory = {
+                match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
+                    Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
+                    Node::Directory(directory) => directory,
+                } 
+            };
 
-        let response_payload = match message.verb {
-            Verb::Post => to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?,
-            Verb::Create => to_value(parent.insert(name, Node::Resource(Resource::new())))?,
-            Verb::Mkdir => to_value(parent.insert(name, Node::Directory(Directory::new())))?,
-            Verb::Delete => to_value(parent.remove(&name))?,
-            Verb::List => to_value(
-                parent.get(&name)
-                    .and_then(|c| c.as_directory())
-                    .map(|d| d.list_tree())
-                    .context("Could not fetch directory tree")?
-            )?,
-            Verb::Get => parent.get(&name)
-                .and_then(|c| c.as_resource())
-                .context("Could not get resource")?
-                .value()
-                .clone(),
-            Verb::Put => {
-                if !parent.contains(&name) {
-                    bail!("Resource {name} does not exist");
-                }
-                to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?
-            },
-            Verb::Stream => todo!("Streams are not implemented yet"),
-            Verb::Stop => todo!("Streams are not implemented yet"),
-            verb => bail!("Unimplemented verb: {verb:?}"),
+            match message.verb {
+                Verb::Post => to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?,
+                Verb::Create => to_value(parent.insert(name, Node::Resource(Resource::new())))?,
+                Verb::Mkdir => to_value(parent.insert(name, Node::Directory(Directory::new())))?,
+                Verb::Delete => to_value(parent.remove(&name))?,
+                Verb::List => to_value(
+                    parent.get(&name)
+                        .and_then(|c| c.as_directory())
+                        .map(|d| d.list_tree())
+                        .context("Could not fetch directory tree")?
+                )?,
+                Verb::Get => parent.get(&name)
+                    .and_then(|c| c.as_resource())
+                    .context("Could not get resource")?
+                    .value()
+                    .clone(),
+                Verb::Put => {
+                    if !parent.contains(&name) {
+                        bail!("Resource {name} does not exist");
+                    }
+                    to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?
+                },
+                Verb::Stream => todo!("Streams are not implemented yet"),
+                Verb::Stop => todo!("Streams are not implemented yet"),
+                verb => bail!("Unimplemented verb: {verb:?}"),
+            }
         };
 
         Ok((response_payload, 200))
