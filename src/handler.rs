@@ -152,7 +152,7 @@ impl ClientHandler {
     }
 
     async fn send<P>(&mut self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
-        self.send_raw(rmp_serde::to_vec(&message)?).await
+        self.send_raw(rmp_serde::to_vec_named(&message)?).await
     }
 
     async fn send_raw(&mut self, raw_message: Vec<u8>) -> Result<()> {
