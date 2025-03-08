@@ -1,7 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Message}, WebSocketStream};
-use futures::StreamExt;
-use lighthouse_protocol::{to_value, ClientMessage, Value, Verb};
+use futures::{SinkExt, StreamExt};
+use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
+use serde::Serialize;
 use serde::Deserialize;
 use tokio::net::TcpStream;
 use tracing::{error, warn};
@@ -74,7 +75,31 @@ impl ClientHandler {
         None
     }
 
-    async fn handle_message(&self, message: ClientMessage<Value>) -> Result<()> {
+    async fn handle_message(&mut self, message: ClientMessage<Value>) -> Result<()> {
+        let request_id = message.request_id;
+
+        let response = self.process_message(message).await
+            .map(|(payload, code)| ServerMessage {
+                request_id: Some(request_id),
+                code,
+                payload,
+                response: None,
+                warnings: Vec::new(),
+            })
+            .unwrap_or_else(|e| ServerMessage {
+                request_id: Some(request_id),
+                code: 400, // TODO: Provide a code as part of the error (instead of using anyhow::Result)?
+                payload: Value::Nil,
+                response: Some(format!("{:?}", e)),
+                warnings: Vec::new(),
+            });
+
+        self.send(response).await?;
+
+        Ok(())
+    }
+
+    async fn process_message(&self, message: ClientMessage<Value>) -> Result<(Value, i32)> {
         let mut tree = self.state.lock_tree().await;
 
         let parent_path = &message.path[..message.path.len() - 1];
@@ -88,45 +113,40 @@ impl ClientHandler {
         };
 
         let response_payload = match message.verb {
-            Verb::Post => {
-                parent.insert(name, Node::Resource(Resource::from(message.payload)));
-                Value::Nil
-            },
-            Verb::Create => {
-                parent.insert(name, Node::Resource(Resource::new()));
-                Value::Nil
-            },
-            Verb::Mkdir => {
-                parent.insert(name, Node::Directory(Directory::new()));
-                Value::Nil
-            },
-            Verb::Delete => {
-                parent.remove(&name);
-                Value::Nil
-            },
-            Verb::List => {
-                let tree = parent.get(&name)
+            Verb::Post => to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?,
+            Verb::Create => to_value(parent.insert(name, Node::Resource(Resource::new())))?,
+            Verb::Mkdir => to_value(parent.insert(name, Node::Directory(Directory::new())))?,
+            Verb::Delete => to_value(parent.remove(&name))?,
+            Verb::List => to_value(
+                parent.get(&name)
                     .and_then(|c| c.as_directory())
                     .map(|d| d.list_tree())
-                    .context("Could not fetch directory tree")?;
-                to_value(tree)?
-            },
-            Verb::Get => {
-                let resource = parent.get(&name)
-                    .and_then(|c| c.as_resource())
-                    .context("Could not get resource")?;
-                resource.value().clone()
-            },
+                    .context("Could not fetch directory tree")?
+            )?,
+            Verb::Get => parent.get(&name)
+                .and_then(|c| c.as_resource())
+                .context("Could not get resource")?
+                .value()
+                .clone(),
             Verb::Put => {
-                // TODO: Check if exists
-                parent.insert(name, Node::Resource(Resource::from(message.payload)));
-                Value::Nil
+                if !parent.contains(&name) {
+                    bail!("Resource {name} does not exist");
+                }
+                to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?
             },
-            Verb::Stream => todo!(),
-            Verb::Stop => todo!(),
+            Verb::Stream => todo!("Streams are not implemented yet"),
+            Verb::Stop => todo!("Streams are not implemented yet"),
             verb => bail!("Unimplemented verb: {verb:?}"),
         };
 
-        Ok(())
+        Ok((response_payload, 200))
+    }
+
+    async fn send<P>(&mut self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
+        self.send_raw(rmp_serde::to_vec(&message)?).await
+    }
+
+    async fn send_raw(&mut self, raw_message: Vec<u8>) -> Result<()> {
+        Ok(self.web_socket.send(Message::Binary(raw_message)).await?)
     }
 }

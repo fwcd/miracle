@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use clap::Parser;
-use model::Directory;
 use state::State;
-use tokio::{net::TcpListener, sync::Mutex};
+use tokio::net::TcpListener;
 use tracing::{error, info, info_span, level_filters::LevelFilter, Instrument};
 use tracing_subscriber::EnvFilter;
 
