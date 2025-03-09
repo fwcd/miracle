@@ -56,8 +56,24 @@ impl Directory {
         self.children.insert(name, node);
     }
 
-    #[allow(unused)]
-    pub fn get_path(&self, path: &[String]) -> Option<&Node> {
+    pub fn descendant_directory(&self, path: &[String]) -> Option<&Directory> {
+        if path.is_empty() {
+            Some(self)
+        } else {
+            self.descendant(path)?.as_directory()
+        }
+    }
+
+    pub fn descendant_directory_mut(&mut self, path: &[String]) -> Option<&mut Directory> {
+        if path.is_empty() {
+            Some(self)
+        } else {
+            self.descendant_mut(path)?.as_directory_mut()
+        }
+    }
+
+    pub fn descendant(&self, path: &[String]) -> Option<&Node> {
+        assert!(!path.is_empty());
         path.first().and_then(|first| {
             let is_leaf = path.len() == 1;
             let child = self.get(first)?;
@@ -66,13 +82,14 @@ impl Directory {
             } else {
                 match child {
                     Node::Resource(_) => None,
-                    Node::Directory(child_dir) => child_dir.get_path(&path[1..]),
+                    Node::Directory(child_dir) => child_dir.descendant(&path[1..]),
                 }  
             }
         })
     }
 
-    pub fn get_path_mut(&mut self, path: &[String]) -> Option<&mut Node> {
+    pub fn descendant_mut(&mut self, path: &[String]) -> Option<&mut Node> {
+        assert!(!path.is_empty());
         path.first().and_then(|first| {
             let is_leaf = path.len() == 1;
             let child = self.get_mut(first)?;
@@ -81,7 +98,7 @@ impl Directory {
             } else {
                 match child {
                     Node::Resource(_) => None,
-                    Node::Directory(child_dir) => child_dir.get_path_mut(&path[1..]),
+                    Node::Directory(child_dir) => child_dir.descendant_mut(&path[1..]),
                 }  
             }
         })
@@ -106,6 +123,14 @@ impl Node {
     }
 
     pub fn as_directory(&self) -> Option<&Directory> {
+        if let Self::Directory(dir) = self {
+            Some(dir)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_directory_mut(&mut self) -> Option<&mut Directory> {
         if let Self::Directory(dir) = self {
             Some(dir)
         } else {

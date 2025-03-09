@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 use dashmap::DashMap;
 use futures::{channel::mpsc, SinkExt, Stream};
 use lighthouse_protocol::{DirectoryTree, Value};
@@ -29,16 +29,8 @@ impl State {
         let parent_path = &path[..path.len() - 1];
         let name = &path[path.len() - 1];
 
-        let parent: &mut Directory = {
-            if parent_path.is_empty() {
-                tree
-            } else {
-                match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
-                    Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
-                    Node::Directory(directory) => directory,
-                } 
-            }
-        };
+        let parent: &mut Directory = tree.descendant_directory_mut(parent_path)
+            .with_context(|| format!("Parent path {parent_path:?} does not point to a directory"))?;
 
         Ok((parent, name))
     }
@@ -63,7 +55,7 @@ impl State {
     /// Checks whether the given path exists.
     pub fn exists(&self, path: &[String]) -> Result<bool> {
         let tree = self.tree.lock().unwrap();
-        Ok(tree.get_path(path).is_some())
+        Ok(tree.descendant(path).is_some())
     }
 
     /// Inserts the given resource at the given path.
@@ -96,7 +88,7 @@ impl State {
     /// Fetches the resource at the given path.
     pub fn get(&self, path: &[String]) -> Result<Value> {
         let tree = self.tree.lock().unwrap();
-        Ok(tree.get_path(path)
+        Ok(tree.descendant(path)
             .context("Could not find path")?
             .as_resource()
             .context("Path is not a resource")?
@@ -107,10 +99,8 @@ impl State {
     /// Lists the tree under the given path.
     pub fn list_tree(&self, path: &[String]) -> Result<DirectoryTree> {
         let tree = self.tree.lock().unwrap();
-        Ok(tree.get_path(path)
-            .context("Could not find path")?
-            .as_directory()
-            .context("Path is not a directory")?
+        Ok(tree.descendant_directory(path)
+            .with_context(|| format!("No directory at {path:?}"))?
             .list_tree())
     }
 
