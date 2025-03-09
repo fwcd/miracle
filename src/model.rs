@@ -10,6 +10,8 @@ pub struct Resource {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Directory {
+    // TODO: Profile whether we'd want to use a DashMap here too and make all
+    // methods take &self, so we could avoid the mutex in State.
     children: HashMap<String, Node>,
 }
 

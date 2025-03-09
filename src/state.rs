@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, MutexGuard};
+use dashmap::DashMap;
+use lighthouse_protocol::Value;
+use tokio::sync::{mpsc, Mutex, MutexGuard};
 
 use crate::model::Directory;
 
 #[derive(Clone)]
 pub struct State {
     tree: Arc<Mutex<Directory>>,
-    // TODO: Store streams (HashMap<Vec<String>, Vec<mpsc::Sender<Value>>>)
+    streams: Arc<DashMap<Vec<String>, Vec<mpsc::Sender<Value>>>>,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
             tree: Arc::new(Mutex::new(Directory::new())),
+            streams: Arc::new(DashMap::new()),
         }
     }
 
