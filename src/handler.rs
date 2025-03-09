@@ -116,6 +116,8 @@ impl ClientHandler {
         let state = &self.state;
         let ClientMessage { request_id, path, verb, payload, .. } = message;
 
+        info!("{verb:?} {path:?}");
+
         let response_payload = match verb {
             Verb::Post => to_value(state.insert_resource(&path, Resource::from(payload)).await?)?,
             Verb::Create => {
