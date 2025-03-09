@@ -42,7 +42,7 @@ impl State {
         if let Some(streams) = self.streams.get(path) {
             for mut stream in streams.clone() {
                 let value = value.clone();
-                set.spawn_local(async move {
+                set.spawn(async move {
                     stream.send(value).await
                 });
             }
