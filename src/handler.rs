@@ -1,18 +1,28 @@
+use std::sync::Arc;
+
 use anyhow::{bail, Result};
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Bytes, Message}, WebSocketStream};
+use dashmap::DashMap;
 use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
 use serde::Serialize;
 use serde::Deserialize;
 use tokio::net::TcpStream;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
-use crate::{model::{Directory, Node, Resource}, state::State};
+use crate::{model::{Directory, Resource}, state::State};
 
 /// A handler that receives and responds to messages from a single client.
 pub struct ClientHandler {
     web_socket: WebSocketStream<TokioAdapter<TcpStream>>,
     state: State,
+    streams: Arc<DashMap<i32, StreamInfo>>,
+}
+
+struct StreamInfo {
+    path: Vec<String>,
+    token: CancellationToken,
 }
 
 impl ClientHandler {
@@ -21,6 +31,7 @@ impl ClientHandler {
         Ok(Self {
             web_socket: async_tungstenite::tokio::accept_async(stream).await?,
             state,
+            streams: Arc::new(DashMap::new()),
         })
     }
 
@@ -101,10 +112,10 @@ impl ClientHandler {
 
     async fn process_message(&self, message: ClientMessage<Value>) -> Result<(Value, i32)> {
         let state = &self.state;
-        let path = message.path;
+        let ClientMessage { request_id, path, verb, payload, .. } = message;
 
-        let response_payload = match message.verb {
-            Verb::Post => to_value(state.insert_resource(&path, Resource::from(message.payload)).await?)?,
+        let response_payload = match verb {
+            Verb::Post => to_value(state.insert_resource(&path, Resource::from(payload)).await?)?,
             Verb::Create => {
                 if state.exists(&path)? {
                     bail!("Path {:?} already exists", &path);
@@ -119,14 +130,51 @@ impl ClientHandler {
                 if !state.exists(&path)? {
                     bail!("Resource at {:?} does not exist", &path);
                 }
-                to_value(state.insert_resource(&path, Resource::from(message.payload)).await?)?
+                to_value(state.insert_resource(&path, Resource::from(payload)).await?)?
             },
-            Verb::Stream => todo!("Streams are not implemented yet"),
-            Verb::Stop => todo!("Streams are not implemented yet"),
+            Verb::Stream => {
+                if self.streams.contains_key(&request_id) {
+                    bail!("A stream with request id {request_id} already exists");
+                };
+
+                let value = to_value(state.get(&path)?)?;
+                let token = CancellationToken::new();
+
+                tokio::spawn({
+                    let path = path.to_vec();
+                    let streams = self.streams.clone();
+                    async move {
+                        Self::run_stream(request_id, &path).await;
+                        streams.remove(&request_id);
+                    }
+                });
+
+                self.streams.insert(request_id, StreamInfo {
+                    path,
+                    token,
+                });
+
+                value
+            },
+            Verb::Stop => {
+                let Some((_, info)) = self.streams.remove(&request_id) else {
+                    bail!("No stream with request id {request_id} is currently running")
+                };
+                if &info.path != &path {
+                    bail!("A stream with request id {} exists, but on another path ({:?})", request_id, &info.path);
+                }
+
+                info.token.cancel();
+                Value::Nil
+            },
             verb => bail!("Unimplemented verb: {verb:?}"),
         };
 
         Ok((response_payload, 200))
+    }
+
+    async fn run_stream(request_id: i32, path: &[String]) {
+        // TODO
     }
 
     async fn send<P>(&mut self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
