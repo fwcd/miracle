@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Bytes, Message}, WebSocketStream};
+use async_tungstenite::tungstenite::{self, error::ProtocolError, Bytes, Message};
 use dashmap::DashMap;
-use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
 use serde::Serialize;
 use serde::Deserialize;
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
-use crate::{model::{Directory, Resource}, state::State};
+use crate::{model::{Directory, Resource}, state::State, ws::{self, ws_channel}};
 
 /// A handler that receives and responds to messages from a single client.
+#[derive(Clone)]
 pub struct ClientHandler {
-    web_socket: WebSocketStream<TokioAdapter<TcpStream>>,
+    ws_tx: mpsc::Sender<Message>,
     state: State,
     streams: Arc<DashMap<i32, StreamInfo>>,
 }
@@ -26,26 +26,25 @@ struct StreamInfo {
 }
 
 impl ClientHandler {
-    /// Creates a new handler from the given stream.
-    pub async fn from_stream(stream: TcpStream, state: State) -> Result<Self> {
-        Ok(Self {
-            web_socket: async_tungstenite::tokio::accept_async(stream).await?,
-            state,
-            streams: Arc::new(DashMap::new()),
-        })
-    }
-
     /// Creates a new handler from the given stream and starts a blocking
     /// receive loop until the connection closes.
     pub async fn handle_stream(stream: TcpStream, state: State) -> Result<()> {
-        let handler = Self::from_stream(stream, state).await?;
-        handler.run().await
+        let ws_stream = async_tungstenite::tokio::accept_async(stream).await?;
+        let (ws_tx, ws_rx) = ws_channel(ws_stream);
+
+        let handler = Self {
+            ws_tx,
+            state,
+            streams: Arc::new(DashMap::new()),
+        };
+
+        handler.run(ws_rx).await
     }
 
     /// Starts a blocking receive loop that parses and responds to messages from
     /// the client. Returns when the connection closes.
-    pub async fn run(mut self) -> Result<()> {
-        while let Some(message) = self.receive_message::<Value>().await {
+    async fn run(self, mut ws_rx: mpsc::Receiver<ws::Result<Message>>) -> Result<()> {
+        while let Some(message) = self.receive_message::<Value>(&mut ws_rx).await {
             match message {
                 Ok(message) => {
                     if let Err(e) = self.handle_message(message).await {
@@ -60,17 +59,17 @@ impl ClientHandler {
 
     /// Receives and parses a single high-level message from the client or
     /// `None` if there are no more.
-    async fn receive_message<P>(&mut self) -> Option<Result<ClientMessage<P>>>
+    async fn receive_message<P>(&self, ws_rx: &mut mpsc::Receiver<ws::Result<Message>>) -> Option<Result<ClientMessage<P>>>
     where
         P: for<'de> Deserialize<'de> {
-        let bytes = self.receive_raw().await?;
+        let bytes = self.receive_raw(ws_rx).await?;
         Some(bytes.and_then(|b| Ok(rmp_serde::from_slice(&b)?)))
     }
 
     // Receives a single binary WebSocket message from the client or `None` if
     /// there are no more.
-    async fn receive_raw(&mut self) -> Option<Result<Bytes>> {
-        while let Some(message) = self.web_socket.next().await {
+    async fn receive_raw(&self, ws_rx: &mut mpsc::Receiver<ws::Result<Message>>) -> Option<Result<Bytes>> {
+        while let Some(message) = ws_rx.recv().await {
             match message {
                 Ok(Message::Binary(bytes)) => return Some(Ok(bytes)),
                 Ok(Message::Ping(_)) => {}, // Ignore pings for now
@@ -86,7 +85,7 @@ impl ClientHandler {
         None
     }
 
-    async fn handle_message(&mut self, message: ClientMessage<Value>) -> Result<()> {
+    async fn handle_message(&self, message: ClientMessage<Value>) -> Result<()> {
         let request_id = message.request_id;
 
         let response = self.process_message(message).await
@@ -177,11 +176,11 @@ impl ClientHandler {
         // TODO
     }
 
-    async fn send<P>(&mut self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
+    async fn send<P>(&self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
         self.send_raw(rmp_serde::to_vec_named(&message)?).await
     }
 
-    async fn send_raw(&mut self, raw_message: Vec<u8>) -> Result<()> {
-        Ok(self.web_socket.send(Message::Binary(raw_message.into())).await?)
+    async fn send_raw(&self, raw_message: Vec<u8>) -> Result<()> {
+        Ok(self.ws_tx.send(Message::Binary(raw_message.into())).await?)
     }
 }
