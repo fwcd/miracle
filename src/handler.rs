@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Result};
 use async_tungstenite::{tokio::TokioAdapter, tungstenite::{self, error::ProtocolError, Bytes, Message}, WebSocketStream};
 use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
@@ -100,56 +100,25 @@ impl ClientHandler {
     }
 
     async fn process_message(&self, message: ClientMessage<Value>) -> Result<(Value, i32)> {
-        let mut tree = self.state.lock_tree().await;
+        let state = &self.state;
+        let path = message.path;
 
-        let response_payload = if message.path.is_empty() {
-            // Root path (i.e. the empty path)
-            match message.verb {
-                Verb::List => to_value(tree.list_tree())?,
-                _ => bail!("The root path can only be listed currently"),
-            }
-        } else {
-            // Any non-root path
-            let parent_path = &message.path[..message.path.len() - 1];
-            let name = message.path[message.path.len() - 1].clone();
-
-            let parent: &mut Directory = {
-                if parent_path.is_empty() {
-                    &mut tree
-                } else {
-                    match tree.get_path_mut(parent_path).ok_or_else(|| anyhow!("Parent path does not exist: {parent_path:?}"))? {
-                        Node::Resource(_) => bail!("Parent path points to a resource: {parent_path:?}"),
-                        Node::Directory(directory) => directory,
-                    } 
+        let response_payload = match message.verb {
+            Verb::Post => to_value(state.insert(&path, Node::Resource(Resource::from(message.payload)))?)?,
+            Verb::Create => to_value(state.insert(&path, Node::Resource(Resource::new()))?)?,
+            Verb::Mkdir => to_value(state.insert(&path, Node::Directory(Directory::new()))?)?,
+            Verb::Delete => to_value(state.remove(&path)?)?,
+            Verb::List => to_value(state.list_tree(&path)?)?,
+            Verb::Get => to_value(state.get(&path)?)?,
+            Verb::Put => {
+                if !state.exists(&path)? {
+                    bail!("Resource at {:?} does not exist", &path);
                 }
-            };
-
-            match message.verb {
-                Verb::Post => to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?,
-                Verb::Create => to_value(parent.insert(name, Node::Resource(Resource::new())))?,
-                Verb::Mkdir => to_value(parent.insert(name, Node::Directory(Directory::new())))?,
-                Verb::Delete => to_value(parent.remove(&name))?,
-                Verb::List => to_value(
-                    parent.get(&name)
-                        .and_then(|c| c.as_directory())
-                        .map(|d| d.list_tree())
-                        .context("Could not fetch directory tree")?
-                )?,
-                Verb::Get => parent.get(&name)
-                    .and_then(|c| c.as_resource())
-                    .context("Could not get resource")?
-                    .value()
-                    .clone(),
-                Verb::Put => {
-                    if !parent.contains(&name) {
-                        bail!("Resource {name} does not exist");
-                    }
-                    to_value(parent.insert(name, Node::Resource(Resource::from(message.payload))))?
-                },
-                Verb::Stream => todo!("Streams are not implemented yet"),
-                Verb::Stop => todo!("Streams are not implemented yet"),
-                verb => bail!("Unimplemented verb: {verb:?}"),
-            }
+                to_value(state.insert(&path, Node::Resource(Resource::from(message.payload)))?)?
+            },
+            Verb::Stream => todo!("Streams are not implemented yet"),
+            Verb::Stop => todo!("Streams are not implemented yet"),
+            verb => bail!("Unimplemented verb: {verb:?}"),
         };
 
         Ok((response_payload, 200))
