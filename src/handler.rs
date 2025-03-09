@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use async_tungstenite::tungstenite::{self, error::ProtocolError, Bytes, Message};
 use dashmap::DashMap;
+use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
 use serde::Serialize;
 use serde::Deserialize;
@@ -137,20 +138,13 @@ impl ClientHandler {
                 };
 
                 let value = to_value(state.get(&path)?)?;
-                let token = CancellationToken::new();
 
                 tokio::spawn({
                     let path = path.to_vec();
-                    let streams = self.streams.clone();
+                    let this = self.clone();
                     async move {
-                        Self::run_stream(request_id, &path).await;
-                        streams.remove(&request_id);
+                        this.run_stream(request_id, &path).await;
                     }
-                });
-
-                self.streams.insert(request_id, StreamInfo {
-                    path,
-                    token,
                 });
 
                 value
@@ -172,8 +166,33 @@ impl ClientHandler {
         Ok((response_payload, 200))
     }
 
-    async fn run_stream(request_id: i32, path: &[String]) {
-        // TODO
+    async fn run_stream(&self, request_id: i32, path: &[String]) {
+        let token = CancellationToken::new();
+
+        self.streams.insert(request_id, StreamInfo {
+            path: path.to_vec(),
+            token,
+        });
+
+        if let Err(e) = self.stream(request_id, path).await {
+            error!("Error while streaming {request_id} (path: {path:?}): {e}");
+        }
+
+        self.streams.remove(&request_id);
+    }
+
+    async fn stream(&self, request_id: i32, path: &[String]) -> Result<()> {
+        let mut stream = self.state.stream(path)?;
+        while let Some(value) = stream.next().await {
+            self.send(ServerMessage {
+                request_id: Some(request_id),
+                code: 200,
+                payload: value,
+                response: None,
+                warnings: Vec::new(),
+            }).await?; // TODO: Should we handle the error gracefully here (e.g. log it) to avoid stopping the stream if something goes wrong?
+        }
+        Ok(())
     }
 
     async fn send<P>(&self, message: ServerMessage<P>) -> Result<()> where P: Serialize {
