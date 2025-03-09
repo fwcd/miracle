@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, bail, Context, Result};
 use dashmap::DashMap;
 use lighthouse_protocol::{DirectoryTree, Value};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinSet};
 
-use crate::model::{Directory, Node};
+use crate::model::{Directory, Node, Resource};
 
 #[derive(Clone)]
 pub struct State {
@@ -41,17 +41,45 @@ impl State {
         Ok((parent, name))
     }
 
+    /// Notifies the streams of the given path about the given value.
+    async fn notify_streams(&self, path: &[String], value: &Value) -> Result<()> {
+        let mut set = JoinSet::new();
+
+        if let Some(streams) = self.streams.get(path) {
+            for stream in streams.clone() {
+                let value = value.clone();
+                set.spawn_local(async move {
+                    stream.send(value).await
+                });
+            }
+        }
+
+        set.join_all().await.into_iter().collect::<Result<(), _>>()?;
+        Ok(())
+    }
+
     /// Checks whether the given path exists.
     pub fn exists(&self, path: &[String]) -> Result<bool> {
         let tree = self.tree.lock().unwrap();
         Ok(tree.get_path(path).is_some())
     }
 
-    /// Inserts or updates the given node at the given path.
-    pub fn insert(&self, path: &[String], node: Node) -> Result<()> {
+    /// Inserts the given resource at the given path.
+    pub async fn insert_resource(&self, path: &[String], resource: Resource) -> Result<()> {
+        {
+            let mut tree = self.tree.lock().unwrap();
+            let (parent, name) = Self::split_lookup(&mut tree, path)?;
+            parent.insert(name.into(), Node::Resource(resource.clone()));
+        }
+        self.notify_streams(path, resource.value()).await;
+        Ok(())
+    }
+
+    /// Insert the given directory at the given path (and overrides anything old).
+    pub async fn insert_directory(&self, path: &[String], directory: Directory) -> Result<()> {
         let mut tree = self.tree.lock().unwrap();
         let (parent, name) = Self::split_lookup(&mut tree, path)?;
-        parent.insert(name.into(), node);
+        parent.insert(name.into(), Node::Directory(directory));
         Ok(())
     }
 

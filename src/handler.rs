@@ -104,9 +104,14 @@ impl ClientHandler {
         let path = message.path;
 
         let response_payload = match message.verb {
-            Verb::Post => to_value(state.insert(&path, Node::Resource(Resource::from(message.payload)))?)?,
-            Verb::Create => to_value(state.insert(&path, Node::Resource(Resource::new()))?)?,
-            Verb::Mkdir => to_value(state.insert(&path, Node::Directory(Directory::new()))?)?,
+            Verb::Post => to_value(state.insert_resource(&path, Resource::from(message.payload)).await?)?,
+            Verb::Create => {
+                if state.exists(&path)? {
+                    bail!("Path {:?} already exists", &path);
+                }
+                to_value(state.insert_resource(&path, Resource::new()).await?)?
+            },
+            Verb::Mkdir => to_value(state.insert_directory(&path, Directory::new()).await?)?,
             Verb::Delete => to_value(state.remove(&path)?)?,
             Verb::List => to_value(state.list_tree(&path)?)?,
             Verb::Get => to_value(state.get(&path)?)?,
@@ -114,7 +119,7 @@ impl ClientHandler {
                 if !state.exists(&path)? {
                     bail!("Resource at {:?} does not exist", &path);
                 }
-                to_value(state.insert(&path, Node::Resource(Resource::from(message.payload)))?)?
+                to_value(state.insert_resource(&path, Resource::from(message.payload)).await?)?
             },
             Verb::Stream => todo!("Streams are not implemented yet"),
             Verb::Stop => todo!("Streams are not implemented yet"),
