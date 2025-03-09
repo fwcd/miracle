@@ -7,8 +7,10 @@ use futures::StreamExt;
 use lighthouse_protocol::{to_value, ClientMessage, ServerMessage, Value, Verb};
 use serde::Serialize;
 use serde::Deserialize;
+use tokio::select;
 use tokio::{net::TcpStream, sync::mpsc};
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 use tracing::{error, warn};
 
 use crate::{model::{Directory, Resource}, state::State, ws::{self, ws_channel}};
@@ -171,12 +173,20 @@ impl ClientHandler {
 
         self.streams.insert(request_id, StreamInfo {
             path: path.to_vec(),
-            token,
+            token: token.clone(),
         });
 
-        if let Err(e) = self.stream(request_id, path).await {
-            error!("Error while streaming {request_id} (path: {path:?}): {e}");
-        }
+        select! {
+            _ = token.cancelled() => {
+                info!("Stopping cancelled stream {request_id} (path: {path:?})");
+            },
+            result = self.stream(request_id, path) => {
+                match result {
+                    Ok(()) => warn!("Stream {request_id} (path: {path:?}) ended and will therefore be stopped"),
+                    Err(e) => error!("Stopping stream {request_id} (path: {path:?}) upon error: {e}"),
+                }
+            },
+        };
 
         self.streams.remove(&request_id);
     }
