@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use lighthouse_protocol::{DirectoryTree, Value};
 use tokio::sync::mpsc;
 
-use crate::model::{Directory, Node, Resource};
+use crate::model::{Directory, Node};
 
 #[derive(Clone)]
 pub struct State {
@@ -64,12 +64,13 @@ impl State {
     }
 
     /// Fetches the resource at the given path.
-    pub fn get(&self, path: &[String]) -> Result<Resource> {
+    pub fn get(&self, path: &[String]) -> Result<Value> {
         let tree = self.tree.lock().unwrap();
         Ok(tree.get_path(path)
             .context("Could not find path")?
             .as_resource()
             .context("Path is not a resource")?
+            .value()
             .clone())
     }
 
