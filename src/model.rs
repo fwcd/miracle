@@ -48,10 +48,6 @@ impl Directory {
         self.children.get_mut(name)
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.children.contains_key(name)
-    }
-
     pub fn remove(&mut self, name: &str) {
         self.children.remove(name);
     }
