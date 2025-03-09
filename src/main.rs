@@ -10,6 +10,7 @@ use crate::handler::ClientHandler;
 mod handler;
 mod model;
 mod state;
+mod ws;
 
 #[derive(Parser)]
 #[command(about, version, disable_help_flag = true)]
