@@ -171,6 +171,9 @@ impl ClientHandler {
     async fn run_stream(&self, request_id: i32, path: &[String]) {
         let token = CancellationToken::new();
 
+        // TODO: Use structured logging scope for this
+        info!("Starting stream {request_id} (path: {path:?})");
+
         self.streams.insert(request_id, StreamInfo {
             path: path.to_vec(),
             token: token.clone(),
