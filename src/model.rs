@@ -73,7 +73,9 @@ impl Directory {
     }
 
     pub fn descendant(&self, path: &[String]) -> Option<&Node> {
-        assert!(!path.is_empty());
+        if path.is_empty() {
+            return None;
+        }
         path.first().and_then(|first| {
             let is_leaf = path.len() == 1;
             let child = self.get(first)?;
@@ -89,7 +91,9 @@ impl Directory {
     }
 
     pub fn descendant_mut(&mut self, path: &[String]) -> Option<&mut Node> {
-        assert!(!path.is_empty());
+        if path.is_empty() {
+            return None;
+        }
         path.first().and_then(|first| {
             let is_leaf = path.len() == 1;
             let child = self.get_mut(first)?;
