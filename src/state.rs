@@ -89,9 +89,9 @@ impl State {
     pub fn get(&self, path: &[String]) -> Result<Value> {
         let tree = self.tree.lock().unwrap();
         Ok(tree.descendant(path)
-            .context("Could not find path")?
+            .with_context(|| format!("Could not find path {path:?}"))?
             .as_resource()
-            .context("Path is not a resource")?
+            .with_context(|| format!("Path {path:?} is not a resource"))?
             .value()
             .clone())
     }
@@ -100,7 +100,7 @@ impl State {
     pub fn list_tree(&self, path: &[String]) -> Result<DirectoryTree> {
         let tree = self.tree.lock().unwrap();
         Ok(tree.descendant_directory(path)
-            .with_context(|| format!("No directory at {path:?}"))?
+            .with_context(|| format!("Path {path:?} is not a directory"))?
             .list_tree())
     }
 
