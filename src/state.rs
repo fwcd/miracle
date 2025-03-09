@@ -2,8 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, bail, Context, Result};
 use dashmap::DashMap;
+use futures::{channel::mpsc, SinkExt, Stream};
 use lighthouse_protocol::{DirectoryTree, Value};
-use tokio::{sync::mpsc, task::JoinSet};
+use stream_guard::GuardStreamExt;
+use tokio::task::JoinSet;
 
 use crate::model::{Directory, Node, Resource};
 
@@ -46,7 +48,7 @@ impl State {
         let mut set = JoinSet::new();
 
         if let Some(streams) = self.streams.get(path) {
-            for stream in streams.clone() {
+            for mut stream in streams.clone() {
                 let value = value.clone();
                 set.spawn_local(async move {
                     stream.send(value).await
@@ -71,7 +73,7 @@ impl State {
             let (parent, name) = Self::split_lookup(&mut tree, path)?;
             parent.insert(name.into(), Node::Resource(resource.clone()));
         }
-        self.notify_streams(path, resource.value()).await;
+        self.notify_streams(path, resource.value()).await?;
         Ok(())
     }
 
@@ -110,5 +112,23 @@ impl State {
             .as_directory()
             .context("Path is not a directory")?
             .list_tree())
+    }
+
+    /// Starts a stream of the given resource that is automatically stopped once dropped.
+    pub fn stream(&self, path: &[String]) -> Result<impl Stream<Item = Value>> {
+        let (tx, rx) = mpsc::channel(4);
+
+        let streams = Arc::clone(&self.streams);
+        let path = path.to_vec();
+
+        if !streams.contains_key(&path) {
+            streams.insert(path.clone(), Vec::new());
+        }
+
+        streams.get_mut(&path).unwrap().push(tx);
+
+        Ok(rx.guard(move || {
+            streams.remove(&path);
+        }))
     }
 }
