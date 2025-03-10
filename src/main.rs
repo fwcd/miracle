@@ -19,7 +19,7 @@ struct Args {
     #[arg(short, long, default_value = "::1", env = "MIRACLE_HOST")]
     host: String,
     /// The port to bind to.
-    #[arg(short, long, default_value = "4000", env = "MIRACLE_PORT")]
+    #[arg(short, long, default_value = "4042", env = "MIRACLE_PORT")]
     port: u16,
     /// Prints this help.
     #[clap(long, action = clap::ArgAction::HelpLong)]
